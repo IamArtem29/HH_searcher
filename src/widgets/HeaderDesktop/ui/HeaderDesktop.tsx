@@ -17,7 +17,7 @@ export const HeaderDesktop = () => {
         <div className="flex h-14 items-center border-b px-4 lg:h-[60px] lg:px-6">
           <Link href="/" className="flex items-center gap-2 font-semibold">
             <BarChart2 className="h-6 w-6" />
-            <span className="">аННалитика</span>
+            <span className="">HH аналитика</span>
           </Link>
         </div>
 
