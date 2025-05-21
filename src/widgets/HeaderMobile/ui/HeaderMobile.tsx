@@ -71,7 +71,8 @@ export const HeaderMobile = () => {
             </Avatar>
           </Link>
         ) : (
-          <AuthModal />
+          <div></div>
+          // <AuthModal />
         )}
       </div>
     </header>
