@@ -1,4 +1,4 @@
-import nc from "next-connect";
+import nc from 'next-connect';
 
 const handler = nc<any, any>();
 
@@ -19,7 +19,7 @@ export type AnalysisContent = {
   skills: Skill[];
 };
 
-const mainSkills = ["html", "css", "react", "vue", "ts", "typescript"];
+const mainSkills = ['html', 'css', 'react', 'vue', 'ts', 'typescript'];
 
 const getAvgSalary = (salary: any) => {
   if (!salary) {
@@ -28,7 +28,7 @@ const getAvgSalary = (salary: any) => {
 
   const { from, to, currency } = salary;
 
-  if (currency !== "RUR") return;
+  if (currency !== 'RUR') return;
 
   switch (true) {
     case !!from && !!to:
@@ -44,14 +44,31 @@ const perPage = 100;
 handler.get(async (req, res) => {
   const { query } = req;
 
-  const { vacancySearchParams, skills: stringSkills } = query;
+  const {
+    vacancySearchParams,
+    skills: stringSkills,
+    experience,
+    salaryFrom,
+    salaryTo,
+    currency,
+    gross,
+  } = query;
 
   const userSkills: string[] = JSON.parse(stringSkills);
 
   const searchParams = new URLSearchParams();
 
-  searchParams.set("text", vacancySearchParams);
-  searchParams.set("per_page", JSON.stringify(perPage));
+  searchParams.set('text', vacancySearchParams);
+  searchParams.set('per_page', JSON.stringify(perPage));
+
+  // Добавляем параметры фильтрации
+  if (experience) {
+    searchParams.set('experience', experience);
+  }
+  if (salaryFrom) {
+    searchParams.set('salary', salaryFrom);
+    searchParams.set('currency', currency || 'RUR');
+  }
 
   const vacanciesResponse = await fetch(
     `https://api.hh.ru/vacancies?${searchParams.toString()}`
@@ -59,46 +76,60 @@ handler.get(async (req, res) => {
 
   const { items, found } = vacanciesResponse;
 
-  const vacancies = items;
+  let vacancies = items;
 
   const pagesAmount = Math.ceil(found / Number(perPage));
-
-  const analysisContent: AnalysisContent = {
-    avgSalary: 0,
-    skills: [],
-    amount: { value: found, valueWithSalary: 0 },
-  };
 
   for (let i = 1; i < (pagesAmount > 20 ? 20 : pagesAmount); i++) {
     const page = i;
 
-    const searchParams = new URLSearchParams();
-
-    searchParams.set("text", vacancySearchParams);
-    searchParams.set("page", `${page}`);
-    searchParams.set("per_page", `${perPage}`);
+    const pageParams = new URLSearchParams(searchParams);
+    pageParams.set('page', `${page}`);
 
     const vacanciesResponse = await fetch(
-      `https://api.hh.ru/vacancies?${searchParams.toString()}`
+      `https://api.hh.ru/vacancies?${pageParams.toString()}`
     ).then((data) => data.json());
 
     const { items } = vacanciesResponse;
-
-    vacancies.push(...items);
+    vacancies = vacancies.concat(items);
   }
 
-  vacancies.map((vacancy: { salary: any; snippet: any }) => {
-    const { skills, amount } = analysisContent;
+  // Дополнительная фильтрация на нашей стороне
+  if (salaryTo || gross) {
+    vacancies = vacancies.filter((vacancy: any) => {
+      const salary = vacancy.salary;
+      if (!salary) return false;
 
+      // Фильтрация по верхней границе зарплаты
+      if (salaryTo && salary.to && salary.to > Number(salaryTo)) {
+        return false;
+      }
+
+      // Фильтрация по типу зарплаты
+      if (gross && salary.gross !== (gross === 'true')) {
+        return false;
+      }
+
+      return true;
+    });
+  }
+
+  const analysisContent: AnalysisContent = {
+    avgSalary: 0,
+    skills: [],
+    amount: { value: vacancies.length, valueWithSalary: 0 },
+  };
+
+  vacancies.forEach((vacancy: any) => {
     const { salary, snippet } = vacancy;
-
     const avgSalary = getAvgSalary(salary);
 
     if (avgSalary) {
-      amount.valueWithSalary++;
+      analysisContent.amount.valueWithSalary++;
       if (analysisContent.avgSalary) {
         analysisContent.avgSalary +=
-          (avgSalary - analysisContent.avgSalary) / amount.valueWithSalary;
+          (avgSalary - analysisContent.avgSalary) /
+          analysisContent.amount.valueWithSalary;
       } else {
         analysisContent.avgSalary = avgSalary;
       }
@@ -106,18 +137,20 @@ handler.get(async (req, res) => {
 
     const { requirement } = snippet;
 
-    userSkills.map((mainSkill) => {
+    userSkills.forEach((mainSkill) => {
       if (!requirement) return;
       if (requirement.toLowerCase().includes(mainSkill)) {
-        const currentSkill = skills.find((skill) => skill.name === mainSkill);
+        const currentSkill = analysisContent.skills.find(
+          (skill) => skill.name === mainSkill
+        );
 
-        const percentage = (1 / amount.value) * 100;
+        const percentage = (1 / analysisContent.amount.value) * 100;
 
         if (currentSkill) {
           currentSkill.amount++;
           currentSkill.percentage += percentage;
         } else {
-          skills.push({
+          analysisContent.skills.push({
             name: mainSkill,
             amount: 1,
             percentage,

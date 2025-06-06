@@ -1,4 +1,4 @@
-import nc from "next-connect";
+import nc from 'next-connect';
 
 const handler = nc<any, any>();
 
@@ -7,12 +7,21 @@ const perPage = 100;
 handler.get(async (req, res) => {
   const { query } = req;
 
-  const { name } = query;
+  const { name, experience, salaryFrom, salaryTo, currency, gross } = query;
 
   const searchParams = new URLSearchParams();
 
-  searchParams.set("text", name);
-  searchParams.set("per_page", JSON.stringify(perPage));
+  searchParams.set('text', name);
+  searchParams.set('per_page', JSON.stringify(perPage));
+
+  // Добавляем параметры фильтрации
+  if (experience) {
+    searchParams.set('experience', experience);
+  }
+  if (salaryFrom) {
+    searchParams.set('salary', salaryFrom);
+    searchParams.set('currency', currency || 'RUR');
+  }
 
   const vacanciesResponse = await fetch(
     `https://api.hh.ru/vacancies?${searchParams.toString()}`
@@ -20,28 +29,42 @@ handler.get(async (req, res) => {
 
   const { items, found } = vacanciesResponse;
 
-  const vacancies = items;
+  let vacancies = items;
 
   const pagesAmount = Math.ceil(found / Number(perPage));
 
   for (let i = 1; i < (pagesAmount > 20 ? 20 : pagesAmount); i++) {
     const page = i;
 
-    const searchParams = new URLSearchParams();
-
-    searchParams.set("text", name);
-    searchParams.set("page", `${page}`);
-    searchParams.set("per_page", `${perPage}`);
+    const pageParams = new URLSearchParams(searchParams);
+    pageParams.set('page', `${page}`);
 
     const vacanciesResponse = await fetch(
-      `https://api.hh.ru/vacancies?${searchParams.toString()}`
+      `https://api.hh.ru/vacancies?${pageParams.toString()}`
     ).then((data) => data.json());
 
     const { items } = vacanciesResponse;
+    vacancies = vacancies.concat(items);
+  }
 
-    
+  // Дополнительная фильтрация на нашей стороне
+  if (salaryTo || gross) {
+    vacancies = vacancies.filter((vacancy: any) => {
+      const salary = vacancy.salary;
+      if (!salary) return false;
 
-    vacancies.push(...items);
+      // Фильтрация по верхней границе зарплаты
+      if (salaryTo && salary.to && salary.to > Number(salaryTo)) {
+        return false;
+      }
+
+      // Фильтрация по типу зарплаты
+      if (gross && salary.gross !== (gross === 'true')) {
+        return false;
+      }
+
+      return true;
+    });
   }
 
   res.json({ vacancies, name });

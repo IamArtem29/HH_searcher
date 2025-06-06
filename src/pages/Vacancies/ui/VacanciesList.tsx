@@ -3,8 +3,12 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
-import { MagnifyingGlassIcon, Cross2Icon } from '@radix-ui/react-icons';
-import { useState, useEffect, ChangeEvent, Key } from 'react';
+import {
+  MagnifyingGlassIcon,
+  Cross2Icon,
+  MixerHorizontalIcon,
+} from '@radix-ui/react-icons';
+import { useState, useEffect, ChangeEvent } from 'react';
 import VacancyCard from '../../../widgets/VacancyCard/ui/VacancyCard';
 import styles from './VacanciesList.module.css';
 import { SkillSetPicker } from '@/components/SkillSet/SkillSetPicker/SkillSetPicker';
@@ -12,12 +16,27 @@ import { useSkillSet } from '@/components/SkillSet/useSkillSet';
 import { SkillSetAdder } from '@/components/SkillSet/SkillSetAdder/SkillSetAdder';
 import { Chart } from '@/shared/Chart/Chart';
 import { Label } from '@/components/ui/label';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 const VacanciesList = () => {
   const [data, setData] = useState<any>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isAnalysisLoading, setIsAnalysisLoading] = useState<boolean>(false);
   const [analysisResult, setAnalysisResult] = useState<any>({});
+  const [isFilterDialogOpen, setIsFilterDialogOpen] = useState(false);
 
   const { skillSet } = useSkillSet();
 
@@ -27,6 +46,14 @@ const VacanciesList = () => {
 
   const [name, setName] = useState<string>('');
   const [queryText, setQueryText] = useState<string>('');
+
+  const [filters, setFilters] = useState({
+    experience: '',
+    salaryFrom: '',
+    salaryTo: '',
+    currency: 'RUR',
+    gross: true,
+  });
 
   const ReturnWord = () => {
     switch (true) {
@@ -38,7 +65,6 @@ const VacanciesList = () => {
                 <h2 className="text-2xl font-bold mb-4">
                   Начните поиск для анализа рынка
                 </h2>
-
                 <p className="text-sm text-muted-foreground">
                   Развивайтесь и продвигайтесь вперед, каждый шаг приближает вас
                   к цели!
@@ -85,6 +111,18 @@ const VacanciesList = () => {
 
       searchParams.set('name', JSON.stringify(name));
 
+      if (filters.experience) {
+        searchParams.set('experience', filters.experience);
+      }
+      if (filters.salaryFrom) {
+        searchParams.set('salaryFrom', filters.salaryFrom);
+      }
+      if (filters.salaryTo) {
+        searchParams.set('salaryTo', filters.salaryTo);
+      }
+      searchParams.set('currency', filters.currency);
+      searchParams.set('gross', JSON.stringify(filters.gross));
+
       const { vacancies, name: queryText } = await fetch(
         `api/vacancies/getVacanciesByName?${searchParams.toString()}`
       ).then((res) => res.json());
@@ -96,21 +134,48 @@ const VacanciesList = () => {
     };
 
     const getVacanciesAnalysis = async () => {
+      setIsAnalysisLoading(true);
       const searchParams = new URLSearchParams();
 
       searchParams.set('vacancySearchParams', name);
-      searchParams.set('skills', JSON.stringify(skillSet?.skills));
+      searchParams.set('skills', JSON.stringify(skillSet?.skills || []));
 
-      const result = fetch(
-        `api/vacancies/getVacanciesAnalysis?${searchParams.toString()}`
-      );
+      if (filters.experience) {
+        searchParams.set('experience', filters.experience);
+      }
+      if (filters.salaryFrom) {
+        searchParams.set('salaryFrom', filters.salaryFrom);
+      }
+      if (filters.salaryTo) {
+        searchParams.set('salaryTo', filters.salaryTo);
+      }
+      searchParams.set('currency', filters.currency);
+      searchParams.set('gross', JSON.stringify(filters.gross));
 
-      result.then((res) => res.json()).then((data) => setAnalysisResult(data));
-
-      setIsAnalysisLoading(false);
+      try {
+        const response = await fetch(
+          `api/vacancies/getVacanciesAnalysis?${searchParams.toString()}`
+        );
+        const data = await response.json();
+        setAnalysisResult(data);
+      } catch (error) {
+        console.error('Error fetching analysis:', error);
+      } finally {
+        setIsAnalysisLoading(false);
+      }
     };
 
     await Promise.all([getVacancies(), getVacanciesAnalysis()]);
+  };
+
+  const handleResetFilters = () => {
+    setFilters({
+      experience: '',
+      salaryFrom: '',
+      salaryTo: '',
+      currency: 'RUR',
+      gross: true,
+    });
   };
 
   const chartOptions: Highcharts.Options = {
@@ -163,9 +228,11 @@ const VacanciesList = () => {
           placeholder="Поиск вакансии"
           value={name}
         />
-        <Button size="icon" onClick={handleClear} disabled={!name}>
-          <Cross2Icon className="h-4 w-4" />
+
+        <Button size="icon" onClick={() => setIsFilterDialogOpen(true)}>
+          <MixerHorizontalIcon className="h-4 w-4" />
         </Button>
+
         <Separator orientation="vertical" />
         <Button
           size="icon"
@@ -175,6 +242,94 @@ const VacanciesList = () => {
           <MagnifyingGlassIcon className="h-4 w-4" />
         </Button>
       </div>
+
+      <Dialog open={isFilterDialogOpen} onOpenChange={setIsFilterDialogOpen}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>Фильтры вакансий</DialogTitle>
+          </DialogHeader>
+
+          <div className="grid gap-6 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="experience" className="text-right">
+                Опыт работы
+              </Label>
+              <Select
+                value={filters.experience}
+                onValueChange={(value) =>
+                  setFilters({ ...filters, experience: value })
+                }
+              >
+                <SelectTrigger className="col-span-3">
+                  <SelectValue placeholder="Выберите опыт" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="noExperience">Нет опыта</SelectItem>
+                  <SelectItem value="between1And3">1-3 года</SelectItem>
+                  <SelectItem value="between3And6">3-6 лет</SelectItem>
+                  <SelectItem value="moreThan6">Более 6 лет</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label className="text-right">Зарплата</Label>
+              <div className="col-span-3 grid grid-cols-2 gap-4">
+                <div className="flex items-center space-x-2">
+                  <Label htmlFor="salaryFrom">От</Label>
+                  <Input
+                    id="salaryFrom"
+                    type="number"
+                    value={filters.salaryFrom}
+                    onChange={(e) =>
+                      setFilters({ ...filters, salaryFrom: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Label htmlFor="salaryTo">До</Label>
+                  <Input
+                    id="salaryTo"
+                    type="number"
+                    value={filters.salaryTo}
+                    onChange={(e) =>
+                      setFilters({ ...filters, salaryTo: e.target.value })
+                    }
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label className="text-right">Валюта</Label>
+              <Select
+                value={filters.currency}
+                onValueChange={(value) =>
+                  setFilters({ ...filters, currency: value })
+                }
+              >
+                <SelectTrigger className="col-span-3">
+                  <SelectValue placeholder="Выберите валюту" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="RUR">Рубли (RUB)</SelectItem>
+                  <SelectItem value="USD">Доллары (USD)</SelectItem>
+                  <SelectItem value="EUR">Евро (EUR)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={handleResetFilters}>
+              Сбросить фильтры
+            </Button>
+            <Button onClick={() => setIsFilterDialogOpen(false)}>
+              Применить
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {!!data.length ? (
         <div className="flex flex-col gap-6">
